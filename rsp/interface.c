@@ -36,14 +36,14 @@ static char* lowercase_mnemonic(const char* x)
 }
 
 // target = address of the instruction to go to (in words inside IMEM)
-static bool compute_target(uint32_t start, uint32_t word, uint32_t pc,
+static bool compute_target(uint32_t word, uint32_t pc,
     const struct rsp_opcode* op, uint32_t* target)
 {
   if (op->id != RSP_OPCODE_JR && op->id != RSP_OPCODE_JALR)
   {
     if (op->id == RSP_OPCODE_J || op->id == RSP_OPCODE_JAL)
     {
-      *target = (word & 0x3FF) - (start - 0x1000) / 4;
+      *target = word & 0x3FF;
     }
     else
     {
@@ -73,6 +73,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
   fprintf(stderr, "Dumping %08x from %x (%d)\n", crc, start_addr, length);
 
   length /= 4;
+  uint32_t imem_start = (start_addr >> 2) - 0x400;
 
   // decode and build labels
   static const struct rsp_opcode* decoded[1024];
@@ -85,8 +86,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
     if (decoded[i]->flags & OPCODE_INFO_BRANCH)
     {
       uint32_t target;
-      if (compute_target(start_addr, word, i, decoded[i], &target)
-	  && target < 1024)
+      if (compute_target(word, imem_start + i, decoded[i], &target))
 	labels[target] = true;
     }
   }
@@ -97,8 +97,8 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
     start_addr, start_addr, length, length);
   for (uint32_t i = 0; i < length; i++)
   {
-    if (labels[i])
-      fprintf(f, "label_%X:\n", i);
+    if (labels[i + imem_start])
+      fprintf(f, "label_%x:\n", i + imem_start);
 
     int line_len = 0;
 
@@ -305,7 +305,9 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	  case RSP_OPCODE_VSUBC:
 	  case RSP_OPCODE_VXOR: 
 	  {
-	    line_len += fprintf(f, " v%d, v%d, v%d[e%d]", vd, rd, rt, e / 2);
+	    line_len += fprintf(f, " v%d, v%d, v%d", vd, rd, rt);
+	    if (e > 0)
+	      line_len += fprintf(f, "[e%d]", e / 2);
 	    break;
 	  }
 
@@ -326,8 +328,8 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
       if (decoded[i]->flags & OPCODE_INFO_BRANCH)
       {
 	uint32_t target;
-	if (compute_target(start_addr, word, i, decoded[i], &target))
-	  line_len += fprintf(f, " label_%X", target);
+	if (compute_target(word, imem_start + i, decoded[i], &target))
+	  line_len += fprintf(f, " label_%x", target);
       }
     }
     else
