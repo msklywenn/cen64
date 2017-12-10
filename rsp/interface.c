@@ -193,7 +193,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	  case RSP_OPCODE_XORI:
 	  {
 	    uint32_t imm = word & 0xFFFF;
-	    line_len += fprintf(f, " r%d, r%d, %x", rt, rs, imm);
+	    line_len += fprintf(f, " r%d, r%d, $%X", rt, rs, imm);
 	    break;
 	  }
 
@@ -234,7 +234,25 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	  case RSP_OPCODE_SRA:
 	  case RSP_OPCODE_SRL:
 	  {
-	    line_len += fprintf(f, "r%d, r%d, %d", rd, rt, vd);
+	    line_len += fprintf(f, " r%d, r%d, %d", rd, rt, vd);
+	    break;
+	  }
+
+	  case RSP_OPCODE_BEQ:
+	  case RSP_OPCODE_BNE:
+	  {
+	    line_len += fprintf(f, " r%d, r%d,", rs, rt);
+	    break;
+	  }
+
+	  case RSP_OPCODE_BGEZ:
+	  case RSP_OPCODE_BGEZAL:
+	  case RSP_OPCODE_BGTZ:
+	  case RSP_OPCODE_BLEZ:
+	  case RSP_OPCODE_BLTZ:
+	  case RSP_OPCODE_BLTZAL:
+	  {
+	    line_len += fprintf(f, " r%d,", rs);
 	    break;
 	  }
 	}
@@ -281,12 +299,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	  case RSP_OPCODE_VSUBC:
 	  case RSP_OPCODE_VXOR: 
 	  {
-	    fprintf(f, " v%d, v%d, v%d[e%d]", vd, rd, rt, e / 2);
-	    line_len += 15;
-	    if (vd > 10) line_len++;
-	    if (rd > 10) line_len++;
-	    if (rt > 10) line_len++;
-	    if (e > 10) line_len++;
+	    line_len += fprintf(f, " v%d, v%d, v%d[e%d]", vd, rd, rt, e / 2);
 	    break;
 	  }
 
@@ -298,15 +311,9 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	  case RSP_OPCODE_VRSQH:
 	  case RSP_OPCODE_VRSQL:
 	  {
-	    fprintf(f, " v%d[e%d], v%d[e%d]", vd, rd, rt, e / 2);
-	    line_len += 15;
-	    if (vd > 10) line_len++;
-	    if (rd > 10) line_len++;
-	    if (rt > 10) line_len++;
-	    if (e > 10) line_len++;
+	    line_len += fprintf(f, " v%d[e%d], v%d[e%d]", vd, rd, rt, e / 2);
 	    break;
 	  }
-
 	}
       }
 
