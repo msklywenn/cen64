@@ -160,7 +160,10 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	    int32_t ofs = word & 0x7F;
 	    if (ofs >= 128)
 	      ofs = 127 - ofs;
-	    line_len += fprintf(f, " v%d[e%d], %d(r%d)", rt, el / 2, ofs, e);
+	    if (ofs < 0)
+	      line_len += fprintf(f, " v%d[e%d], %d(r%d)", rt, el / 2, ofs, e);
+	    else
+	      line_len += fprintf(f, " v%d[e%d], $%x(r%d)", rt, el / 2, ofs, e);
 	    break;
 	  }
 
@@ -174,7 +177,10 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	  case RSP_OPCODE_SW:
 	  {
 	    int16_t ofs = (int16_t)(word & 0xFFFF);
-	    line_len += fprintf(f, " r%d, %d(r%d)", rt, ofs, rs);
+	    if (ofs < 0)
+	      line_len += fprintf(f, " r%d, %d(r%d)", rt, ofs, rs);
+	    else
+	      line_len += fprintf(f, " r%d, $%x(r%d)", rt, ofs, rs);
 	    break;
 	  }
 
@@ -362,10 +368,11 @@ void rsp_dma_read(struct rsp *rsp) {
     assert(total <= 4096);
     static uint32_t buffer[1024];
     for (uint32_t i = 0; i <= count; i++) {
-    	for (uint32_t j = 0; j < length; j+=4) {
-	    uint32_t src = ((rsp->regs[RSP_CP0_REGISTER_DMA_DRAM] & 0x7FFFFC) + i * (length + skip) + j) & 0x7FFFFC;
-	    bus_read_word(rsp, src, buffer + i * length + j / 4);
-	}
+      for (uint32_t j = 0; j < length; j+=4) {
+	uint32_t src = ((rsp->regs[RSP_CP0_REGISTER_DMA_DRAM] & 0x7FFFFC)
+	    + i * (length + skip) + j) & 0x7FFFFC;
+	bus_read_word(rsp, src, buffer + i * length + j / 4);
+      }
     }
     dump_disasm(buffer, total, rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1FFC);
   }
