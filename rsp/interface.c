@@ -111,22 +111,79 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
       fprintf(f, "\t%s", lowercase_mnemonic(table[op->id]));
       line_len += 8 + strlen(table[op->id]);
 
-      if (op->flags & OPCODE_INFO_NEEDRS)
-      {
-	fprintf(f, " rs=%c%d",
-	    op->flags & OPCODE_INFO_VECTOR ? 'v' : 'r', GET_RS(word));
-	line_len += 6;
-	if (GET_RS(word) > 10)
-	  line_len++;
-      }
+      uint32_t rt = GET_RT(word); // starting bit 16
+      uint32_t rs = GET_RS(word); // starting bit 21
+      uint32_t rd = GET_RD(word); // starting bit 11
+      uint32_t vd = GET_VD(word); // starting bit 6
+      uint32_t el = GET_EL(word); // starting bit 7
+      uint32_t e = GET_E(word); // starting bit 21
 
-      if (op->flags & OPCODE_INFO_NEEDRT)
+      if (op->id == RSP_OPCODE_MFC0 || op->id == RSP_OPCODE_MTC0)
       {
-	fprintf(f, " rt=%c%d",
-	    op->flags & OPCODE_INFO_VECTOR ? 'v' : 'r', GET_RT(word));
-	line_len += 6;
-	if (GET_RT(word) > 10)
-	  line_len++;
+	fprintf(f, " r%d, c%d", rt, rd);
+	line_len += 7;
+	if (rt > 10) line_len++;
+	if (rd > 10) line_len++;
+      }
+      else if (op->id == RSP_OPCODE_MFC2 || op->id == RSP_OPCODE_MTC2)
+      {
+	fprintf(f, " r%d, v%d[e%d]", rt, rd, el / 2);
+	line_len += 11;
+	if (rt > 10) line_len++;
+	if (rd > 10) line_len++;
+	if (el > 10) line_len++;
+      }
+      else if (op->flags & OPCODE_INFO_VECTOR)
+      {
+	switch (op->id)
+	{
+	  case RSP_OPCODE_VNOP:
+	    break;
+
+	  case RSP_OPCODE_VMOV:
+	  case RSP_OPCODE_VRCP:
+	  case RSP_OPCODE_VRCPH:
+	  case RSP_OPCODE_VRCPL:
+	  case RSP_OPCODE_VRSQ:
+	  case RSP_OPCODE_VRSQH:
+	  case RSP_OPCODE_VRSQL:
+	    fprintf(f, " v%d[e%d], v%d[e%d]", vd, rd, rt, e / 2);
+	    line_len += 15;
+	    if (vd > 10) line_len++;
+	    if (rd > 10) line_len++;
+	    if (rt > 10) line_len++;
+	    if (e > 10) line_len++;
+	    break;
+
+	  default:
+	    fprintf(f, " v%d, v%d, v%d[e%d]", vd, rd, rt, e / 2);
+	    line_len += 15;
+	    if (vd > 10) line_len++;
+	    if (rd > 10) line_len++;
+	    if (rt > 10) line_len++;
+	    if (e > 10) line_len++;
+	    break;
+	}
+      }
+      else
+      {
+	if (op->flags & OPCODE_INFO_NEEDRS)
+	{
+	  fprintf(f, " rs=%c%d",
+	      op->flags & OPCODE_INFO_VECTOR ? 'v' : 'r', GET_RS(word));
+	  line_len += 6;
+	  if (GET_RS(word) > 10)
+	    line_len++;
+	}
+
+	if (op->flags & OPCODE_INFO_NEEDRT)
+	{
+	  fprintf(f, " rt=%c%d",
+	      op->flags & OPCODE_INFO_VECTOR ? 'v' : 'r', GET_RT(word));
+	  line_len += 6;
+	  if (GET_RT(word) > 10)
+	    line_len++;
+	}
       }
 
       if (decoded[i]->flags & OPCODE_INFO_BRANCH)
