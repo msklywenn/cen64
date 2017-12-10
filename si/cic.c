@@ -35,7 +35,7 @@
 #define CRC_NUS_6106 0xACC8580AU
 #define CRC_NUS_8303 0x0E018159U
 
-cen64_cold static uint32_t si_crc32(const uint8_t *data, size_t size);
+cen64_cold uint32_t si_crc32(const uint8_t *data, size_t size);
 
 // Determines the CIC seed for a cart, given the ROM data.
 int get_cic_seed(const uint8_t *rom_data, uint32_t *cic_seed) {

@@ -15,6 +15,153 @@
 #include "rsp/cpu.h"
 #include "rsp/interface.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+#include <ctype.h>
+
+cen64_cold uint32_t si_crc32(const uint8_t *data, size_t size);
+
+static char* lowercase_mnemonic(const char* x)
+{
+  static char buffer[17];
+  int i = 0;
+  do
+  {
+    buffer[i] = tolower(x[i]);
+    i++;
+  }
+  while (i < 16 && x[i] != 0);
+  buffer[i] = 0;
+  return buffer;
+}
+
+// target = address of the instruction to go to (in words inside IMEM)
+static bool compute_target(uint32_t start, uint32_t word, uint32_t pc,
+    const struct rsp_opcode* op, uint32_t* target)
+{
+  if (op->id != RSP_OPCODE_JR && op->id != RSP_OPCODE_JALR)
+  {
+    if (op->id == RSP_OPCODE_J || op->id == RSP_OPCODE_JAL)
+    {
+      *target = (word & 0x3FF) - (start - 0x1000) / 4;
+    }
+    else
+    {
+      uint32_t ex = word & 0xFFFF;
+      int16_t offset = (int16_t)ex;
+      *target = pc + offset + 1; 
+    }
+    return true;
+  }
+  return false;
+}
+
+static void dump_disasm(const uint32_t* buffer, uint32_t length,
+    uint32_t start_addr)
+{
+  uint32_t crc = si_crc32((uint8_t*)buffer, length);
+
+  static char filename[256];
+  snprintf(filename, 256, "ucode_%08x.asm", crc);
+  FILE* f = fopen(filename, "r");
+  if (f != NULL)
+  {
+    fclose(f);
+    return;
+  }
+
+  fprintf(stderr, "Dumping %08x from %x (%d)\n", crc, start_addr, length);
+
+  length /= 4;
+
+  // decode and build labels
+  static const struct rsp_opcode* decoded[1024];
+  static bool labels[1024];
+  memset(labels, 0, sizeof(labels));
+  for (uint32_t i = 0; i < length; i++)
+  {
+    uint32_t word = buffer[i];
+    decoded[i] = rsp_decode_instruction(word);
+    if (decoded[i]->flags & OPCODE_INFO_BRANCH)
+    {
+      uint32_t target;
+      if (compute_target(start_addr, word, i, decoded[i], &target)
+	  && target < 1024)
+	labels[target] = true;
+    }
+  }
+
+  // dump ops
+  f = fopen(filename, "w");
+  fprintf(f, "; start=%Xh(%d) length=%d(%Xh)\n",
+    start_addr, start_addr, length, length);
+  for (uint32_t i = 0; i < length; i++)
+  {
+    if (labels[i])
+      fprintf(f, "label_%X:\n", i);
+
+    int line_len = 0;
+
+    uint32_t word = buffer[i];
+    if (word != 0)
+    {
+      const struct rsp_opcode* op = decoded[i];
+      const char** table = (op->flags & OPCODE_INFO_VECTOR)
+	? rsp_vector_opcode_mnemonics : rsp_opcode_mnemonics;
+      fprintf(f, "\t%s", lowercase_mnemonic(table[op->id]));
+      line_len += 8 + strlen(table[op->id]);
+
+      if (op->flags & OPCODE_INFO_NEEDRS)
+      {
+	fprintf(f, " rs=%c%d",
+	    op->flags & OPCODE_INFO_VECTOR ? 'v' : 'r', GET_RS(word));
+	line_len += 6;
+	if (GET_RS(word) > 10)
+	  line_len++;
+      }
+
+      if (op->flags & OPCODE_INFO_NEEDRT)
+      {
+	fprintf(f, " rt=%c%d",
+	    op->flags & OPCODE_INFO_VECTOR ? 'v' : 'r', GET_RT(word));
+	line_len += 6;
+	if (GET_RT(word) > 10)
+	  line_len++;
+      }
+
+      if (decoded[i]->flags & OPCODE_INFO_BRANCH)
+      {
+	uint32_t target;
+	if (compute_target(start_addr, word, i, decoded[i], &target))
+	{
+	  fprintf(f, " label_%X", target);
+	  line_len += 8;
+	  if (target > 0x10)
+	    line_len++;
+	  if (target > 0x100)
+	    line_len++;
+	  if (target > 0x1000)
+	    line_len++;
+	}
+      }
+    }
+    else
+    {
+      fprintf(f, "\tnop");
+      line_len += 11;
+    }
+
+    for (int i = 40 - line_len; i > 0; i--)
+      fputc(' ', f);
+    fprintf(f, " ; %02X %02X %02X %02X",
+	(word >> 24) & 0xFF, (word >> 16) & 0xFF,
+	(word >> 8) & 0xFF, word & 0xFF);
+
+    fputc('\n', f);
+  }
+  fclose(f);
+}
+
 // DMA into the RSP's memory space.
 void rsp_dma_read(struct rsp *rsp) {
   uint32_t length = (rsp->regs[RSP_CP0_REGISTER_DMA_READ_LENGTH] & 0xFFF) + 1;
@@ -30,6 +177,20 @@ void rsp_dma_read(struct rsp *rsp) {
   // Check length.
   if (((rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0xFFF) + length) > 0x1000)
     length = 0x1000 - (rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0xFFF);
+
+  if (rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1000)
+  {
+    uint32_t total = (count + 1) * length;
+    assert(total <= 4096);
+    static uint32_t buffer[1024];
+    for (uint32_t i = 0; i <= count; i++) {
+    	for (uint32_t j = 0; j < length; j+=4) {
+	    uint32_t src = ((rsp->regs[RSP_CP0_REGISTER_DMA_DRAM] & 0x7FFFFC) + i * (length + skip) + j) & 0x7FFFFC;
+	    bus_read_word(rsp, src, buffer + i * length + j / 4);
+	}
+    }
+    dump_disasm(buffer, total, rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1FFC);
+  }
 
   do {
     uint32_t source = rsp->regs[RSP_CP0_REGISTER_DMA_DRAM] & 0x7FFFFC;
@@ -188,4 +349,5 @@ int write_sp_regs2(void *opaque, uint32_t address, uint32_t word, uint32_t dqm) 
 
   return 0;
 }
+
 
