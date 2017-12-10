@@ -93,7 +93,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 
   // dump ops
   f = fopen(filename, "w");
-  fprintf(f, "; start=%Xh(%d) length=%d(%Xh)\n",
+  fprintf(f, "// start=%Xh(%d) length=%d(%Xh)\n",
     start_addr, start_addr, length, length);
   for (uint32_t i = 0; i < length; i++)
   {
@@ -108,8 +108,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
       const struct rsp_opcode* op = decoded[i];
       const char** table = (op->flags & OPCODE_INFO_VECTOR)
 	? rsp_vector_opcode_mnemonics : rsp_opcode_mnemonics;
-      fprintf(f, "\t%s", lowercase_mnemonic(table[op->id]));
-      line_len += 8 + strlen(table[op->id]);
+      line_len += fprintf(f, "\t%s", lowercase_mnemonic(table[op->id]));
 
       uint32_t rt = GET_RT(word); // starting bit 16
       uint32_t rs = GET_RS(word); // starting bit 21
@@ -118,27 +117,178 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
       uint32_t el = GET_EL(word); // starting bit 7
       uint32_t e = GET_E(word); // starting bit 21
 
-      if (op->id == RSP_OPCODE_MFC0 || op->id == RSP_OPCODE_MTC0)
-      {
-	fprintf(f, " r%d, c%d", rt, rd);
-	line_len += 7;
-	if (rt > 10) line_len++;
-	if (rd > 10) line_len++;
-      }
-      else if (op->id == RSP_OPCODE_MFC2 || op->id == RSP_OPCODE_MTC2)
-      {
-	fprintf(f, " r%d, v%d[e%d]", rt, rd, el / 2);
-	line_len += 11;
-	if (rt > 10) line_len++;
-	if (rd > 10) line_len++;
-	if (el > 10) line_len++;
-      }
-      else if (op->flags & OPCODE_INFO_VECTOR)
+      if ((op->flags & OPCODE_INFO_VECTOR) == 0)
       {
 	switch (op->id)
 	{
-	  case RSP_OPCODE_VNOP:
+	  case RSP_OPCODE_MFC0:
+	  case RSP_OPCODE_MTC0:
+	  case RSP_OPCODE_CFC2:
+	  case RSP_OPCODE_CTC2:
+	  {
+	    line_len += fprintf(f, " r%d, c%d", rt, rd);
 	    break;
+	  }
+
+	  case RSP_OPCODE_MFC2:
+	  case RSP_OPCODE_MTC2:
+	  {
+	    line_len += fprintf(f, " r%d, v%d[e%d]", rt, rd, el / 2);
+	    break;
+	  }
+
+	  case RSP_OPCODE_LBV:
+	  case RSP_OPCODE_LDV:
+	  case RSP_OPCODE_LLV:
+	  case RSP_OPCODE_LPV:
+	  case RSP_OPCODE_LQV:
+	  case RSP_OPCODE_LRV:
+	  case RSP_OPCODE_LSV:
+	  case RSP_OPCODE_LTV:
+	  case RSP_OPCODE_LUV:
+	  case RSP_OPCODE_SBV:
+	  case RSP_OPCODE_SDV:
+	  case RSP_OPCODE_SLV:
+	  case RSP_OPCODE_SPV:
+	  case RSP_OPCODE_SQV:
+	  case RSP_OPCODE_SRV:
+	  case RSP_OPCODE_SSV:
+	  case RSP_OPCODE_STV:
+	  case RSP_OPCODE_SUV:
+	  case RSP_OPCODE_SWV:
+	  {
+	    int32_t ofs = word & 0x7F;
+	    if (ofs >= 128)
+	      ofs = 127 - ofs;
+	    line_len += fprintf(f, " v%d[e%d], %d(r%d)", rt, el / 2, ofs, e);
+	    break;
+	  }
+
+	  case RSP_OPCODE_LB:
+	  case RSP_OPCODE_LBU:
+	  case RSP_OPCODE_LH:
+	  case RSP_OPCODE_LHU:
+	  case RSP_OPCODE_LW:
+	  case RSP_OPCODE_SB:
+	  case RSP_OPCODE_SH:
+	  case RSP_OPCODE_SW:
+	  {
+	    int16_t ofs = (int16_t)(word & 0xFFFF);
+	    line_len += fprintf(f, " r%d, %d(r%d)", rt, ofs, rs);
+	    break;
+	  }
+
+	  case RSP_OPCODE_LUI:
+	  {
+	    uint32_t imm = word & 0xFFFF;
+	    line_len += fprintf(f, " r%d, %d", rt, imm);
+	    break;
+	  }
+
+	  case RSP_OPCODE_ADDIU:
+	  case RSP_OPCODE_ANDI:
+	  case RSP_OPCODE_ORI:
+	  case RSP_OPCODE_SLTI:
+	  case RSP_OPCODE_SLTIU:
+	  case RSP_OPCODE_XORI:
+	  {
+	    uint32_t imm = word & 0xFFFF;
+	    line_len += fprintf(f, " r%d, r%d, %x", rt, rs, imm);
+	    break;
+	  }
+
+	  case RSP_OPCODE_ADDU:
+	  case RSP_OPCODE_AND:
+	  case RSP_OPCODE_NOR:
+	  case RSP_OPCODE_OR:
+	  case RSP_OPCODE_SLT:
+	  case RSP_OPCODE_SLTU:
+	  case RSP_OPCODE_SUBU:
+	  case RSP_OPCODE_XOR:
+	  {
+	    line_len += fprintf(f, " r%d, r%d, r%d", rd, rs, rt);
+	    break;
+	  }
+
+	  case RSP_OPCODE_SLLV:
+	  case RSP_OPCODE_SRAV:
+	  case RSP_OPCODE_SRLV:
+	  {
+	    line_len += fprintf(f, " r%d, r%d, r%d", rd, rt, rs);
+	    break;
+	  }
+
+	  case RSP_OPCODE_JALR:
+	  {
+	    line_len += fprintf(f, " r%d, r%d", rd, rs);
+	    break;
+	  }
+
+	  case RSP_OPCODE_JR:
+	  {
+	    line_len += fprintf(f, " r%d", rs);
+	    break;
+	  }
+
+	  case RSP_OPCODE_SLL:
+	  case RSP_OPCODE_SRA:
+	  case RSP_OPCODE_SRL:
+	  {
+	    line_len += fprintf(f, "r%d, r%d, %d", rd, rt, vd);
+	    break;
+	  }
+	}
+      }
+      else
+      {
+	switch (op->id)
+	{
+	  case RSP_OPCODE_VABS:
+	  case RSP_OPCODE_VADD:
+	  case RSP_OPCODE_VADDC: 
+	  case RSP_OPCODE_VAND:
+	  case RSP_OPCODE_VCH:
+	  case RSP_OPCODE_VCL:
+	  case RSP_OPCODE_VCR:
+	  case RSP_OPCODE_VEQ:
+	  case RSP_OPCODE_VGE:
+	  case RSP_OPCODE_VLT:
+	  case RSP_OPCODE_VMACF:
+	  case RSP_OPCODE_VMACQ:
+	  case RSP_OPCODE_VMACU:
+	  case RSP_OPCODE_VMADH:
+	  case RSP_OPCODE_VMADL:
+	  case RSP_OPCODE_VMADM:
+	  case RSP_OPCODE_VMADN:
+	  case RSP_OPCODE_VMRG:
+	  case RSP_OPCODE_VMUDH:
+	  case RSP_OPCODE_VMUDL:
+	  case RSP_OPCODE_VMUDM:
+	  case RSP_OPCODE_VMUDN:
+	  case RSP_OPCODE_VMULF:
+	  case RSP_OPCODE_VMULQ:
+	  case RSP_OPCODE_VMULU:
+	  case RSP_OPCODE_VNAND:
+	  case RSP_OPCODE_VNE:
+	  case RSP_OPCODE_VNOR:
+	  case RSP_OPCODE_VNULL:
+	  case RSP_OPCODE_VNXOR:
+	  case RSP_OPCODE_VOR:
+	  case RSP_OPCODE_VRNDN:
+	  case RSP_OPCODE_VRNDP:
+	  case RSP_OPCODE_VSAR:
+	  case RSP_OPCODE_VSUB:
+	  case RSP_OPCODE_VSUBC:
+	  case RSP_OPCODE_VXOR: 
+	  {
+	    fprintf(f, " v%d, v%d, v%d[e%d]", vd, rd, rt, e / 2);
+	    line_len += 15;
+	    if (vd > 10) line_len++;
+	    if (rd > 10) line_len++;
+	    if (rt > 10) line_len++;
+	    if (e > 10) line_len++;
+	    break;
+	  }
 
 	  case RSP_OPCODE_VMOV:
 	  case RSP_OPCODE_VRCP:
@@ -147,6 +297,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	  case RSP_OPCODE_VRSQ:
 	  case RSP_OPCODE_VRSQH:
 	  case RSP_OPCODE_VRSQL:
+	  {
 	    fprintf(f, " v%d[e%d], v%d[e%d]", vd, rd, rt, e / 2);
 	    line_len += 15;
 	    if (vd > 10) line_len++;
@@ -154,35 +305,8 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
 	    if (rt > 10) line_len++;
 	    if (e > 10) line_len++;
 	    break;
+	  }
 
-	  default:
-	    fprintf(f, " v%d, v%d, v%d[e%d]", vd, rd, rt, e / 2);
-	    line_len += 15;
-	    if (vd > 10) line_len++;
-	    if (rd > 10) line_len++;
-	    if (rt > 10) line_len++;
-	    if (e > 10) line_len++;
-	    break;
-	}
-      }
-      else
-      {
-	if (op->flags & OPCODE_INFO_NEEDRS)
-	{
-	  fprintf(f, " rs=%c%d",
-	      op->flags & OPCODE_INFO_VECTOR ? 'v' : 'r', GET_RS(word));
-	  line_len += 6;
-	  if (GET_RS(word) > 10)
-	    line_len++;
-	}
-
-	if (op->flags & OPCODE_INFO_NEEDRT)
-	{
-	  fprintf(f, " rt=%c%d",
-	      op->flags & OPCODE_INFO_VECTOR ? 'v' : 'r', GET_RT(word));
-	  line_len += 6;
-	  if (GET_RT(word) > 10)
-	    line_len++;
 	}
       }
 
@@ -190,27 +314,17 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
       {
 	uint32_t target;
 	if (compute_target(start_addr, word, i, decoded[i], &target))
-	{
-	  fprintf(f, " label_%X", target);
-	  line_len += 8;
-	  if (target > 0x10)
-	    line_len++;
-	  if (target > 0x100)
-	    line_len++;
-	  if (target > 0x1000)
-	    line_len++;
-	}
+	  line_len += fprintf(f, " label_%X", target);
       }
     }
     else
     {
-      fprintf(f, "\tnop");
-      line_len += 11;
+      line_len += fprintf(f, "\tnop");
     }
 
-    for (int i = 40 - line_len; i > 0; i--)
+    for (int i = 32 - line_len; i > 0; i--)
       fputc(' ', f);
-    fprintf(f, " ; %02X %02X %02X %02X",
+    fprintf(f, " // %02X %02X %02X %02X",
 	(word >> 24) & 0xFF, (word >> 16) & 0xFF,
 	(word >> 8) & 0xFF, word & 0xFF);
 
