@@ -56,8 +56,10 @@ static bool compute_target(uint32_t word, uint32_t pc,
   return false;
 }
 
-static void dump_disasm(const uint32_t* buffer, uint32_t length, uint32_t start)
+static void dump_disasm(const uint32_t buffer[0x400],
+    uint32_t start, uint32_t end)
 {
+  uint32_t length = end - start;
   uint32_t crc = si_crc32((uint8_t*)buffer, length);
 
   static char filename[256];
@@ -71,33 +73,38 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length, uint32_t start)
 
   fprintf(stderr, "Dumping %08x from %x (%d)\n", crc, start, length);
 
-  length /= 4;
-  uint32_t imem_start = (start >> 2) - 0x400;
-
   // decode and build labels
   static const struct rsp_opcode* decoded[1024];
   static bool labels[1024];
   memset(labels, 0, sizeof(labels));
-  for (uint32_t i = 0; i < length; i++)
+  for (uint32_t i = 0; i < 0x400; i++)
   {
     uint32_t word = buffer[i];
     decoded[i] = rsp_decode_instruction(word);
     if (decoded[i]->flags & OPCODE_INFO_BRANCH)
     {
       uint32_t target;
-      if (compute_target(word, imem_start + i, decoded[i], &target))
+      if (compute_target(word, i, decoded[i], &target))
 	labels[target] = true;
     }
   }
 
-  // dump ops
   f = fopen(filename, "w");
   fprintf(f, "// start=%Xh(%d) length=%d(%Xh)\n",
     start, start, length, length);
-  for (uint32_t i = 0; i < length; i++)
+
+  // dump ops
+  start = start / 4 - 0x400;
+  end = end / 4 - 0x400;
+  for (uint32_t i = 0; i < 0x400; i++)
   {
-    if (labels[i + imem_start])
-      fprintf(f, "label_%x:\n", i + imem_start);
+    if (i == start)
+      fprintf(f, "start:\n");
+    if (i == end)
+      fprintf(f, "end:\n");
+
+    if (labels[i])
+      fprintf(f, "label_%x:\n", i);
 
     int line_len = 0;
 
@@ -340,7 +347,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length, uint32_t start)
       if (decoded[i]->flags & OPCODE_INFO_BRANCH)
       {
 	uint32_t target;
-	if (compute_target(word, imem_start + i, decoded[i], &target))
+	if (compute_target(word, i, decoded[i], &target))
 	  line_len += fprintf(f, " label_%x", target);
       }
     }
@@ -351,12 +358,16 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length, uint32_t start)
 
     for (int i = 32 - line_len; i > 0; i--)
       fputc(' ', f);
-    fprintf(f, " // %02X %02X %02X %02X",
+    fprintf(f, "// %02X %02X %02X %02X",
 	(word >> 24) & 0xFF, (word >> 16) & 0xFF,
 	(word >> 8) & 0xFF, word & 0xFF);
 
     fputc('\n', f);
   }
+  
+  if (end == 0x400)
+    fprintf(f, "end:\n");
+
   fclose(f);
 }
 
@@ -375,6 +386,8 @@ void rsp_dma_read(struct rsp *rsp) {
   // Check length.
   if (((rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0xFFF) + length) > 0x1000)
     length = 0x1000 - (rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0xFFF);
+
+  uint32_t cache_start = rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1FFC;
 
   do {
     uint32_t source = rsp->regs[RSP_CP0_REGISTER_DMA_DRAM] & 0x7FFFFC;
@@ -404,9 +417,10 @@ void rsp_dma_read(struct rsp *rsp) {
     rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] += length;
   } while(++i <= count);
 
-  if (rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1000)
+  if (cache_start & 0x1000)
   {
-    dump_disasm((const uint32_t*)(rsp->mem + 0x1000), 0x1000, 0x1000);
+    dump_disasm((const uint32_t*)(rsp->mem + 0x1000), cache_start,
+	cache_start + length * (count + 1));
   }
 }
 
@@ -523,7 +537,7 @@ int write_sp_regs(void *opaque, uint32_t address, uint32_t word, uint32_t dqm) {
   if (reg + SP_REGISTER_OFFSET == RSP_CP0_REGISTER_SP_STATUS
       && (word & SP_STATUS_HALT))
   {
-    dump_disasm((const uint32_t*)(rsp->mem + 0x1000), 0x1000, 0x1000);
+    dump_disasm((const uint32_t*)(rsp->mem + 0x1000), 0x1000, 0x2000);
   }
 
 
