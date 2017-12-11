@@ -51,13 +51,12 @@ static bool compute_target(uint32_t word, uint32_t pc,
       int16_t offset = (int16_t)ex;
       *target = pc + offset + 1; 
     }
-    return true;
+    return *target < 1024;
   }
   return false;
 }
 
-static void dump_disasm(const uint32_t* buffer, uint32_t length,
-    uint32_t start_addr)
+static void dump_disasm(const uint32_t* buffer, uint32_t length, uint32_t start)
 {
   uint32_t crc = si_crc32((uint8_t*)buffer, length);
 
@@ -70,10 +69,10 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
     return;
   }
 
-  fprintf(stderr, "Dumping %08x from %x (%d)\n", crc, start_addr, length);
+  fprintf(stderr, "Dumping %08x from %x (%d)\n", crc, start, length);
 
   length /= 4;
-  uint32_t imem_start = (start_addr >> 2) - 0x400;
+  uint32_t imem_start = (start >> 2) - 0x400;
 
   // decode and build labels
   static const struct rsp_opcode* decoded[1024];
@@ -94,7 +93,7 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length,
   // dump ops
   f = fopen(filename, "w");
   fprintf(f, "// start=%Xh(%d) length=%d(%Xh)\n",
-    start_addr, start_addr, length, length);
+    start, start, length, length);
   for (uint32_t i = 0; i < length; i++)
   {
     if (labels[i + imem_start])
@@ -364,21 +363,6 @@ void rsp_dma_read(struct rsp *rsp) {
   if (((rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0xFFF) + length) > 0x1000)
     length = 0x1000 - (rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0xFFF);
 
-  if (rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1000)
-  {
-    uint32_t total = (count + 1) * length;
-    assert(total <= 4096);
-    static uint32_t buffer[1024];
-    for (uint32_t i = 0; i <= count; i++) {
-      for (uint32_t j = 0; j < length; j+=4) {
-	uint32_t src = ((rsp->regs[RSP_CP0_REGISTER_DMA_DRAM] & 0x7FFFFC)
-	    + i * (length + skip) + j) & 0x7FFFFC;
-	bus_read_word(rsp, src, buffer + i * length + j / 4);
-      }
-    }
-    dump_disasm(buffer, total, rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1FFC);
-  }
-
   do {
     uint32_t source = rsp->regs[RSP_CP0_REGISTER_DMA_DRAM] & 0x7FFFFC;
     uint32_t dest = rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1FFC;
@@ -517,6 +501,14 @@ int write_sp_regs(void *opaque, uint32_t address, uint32_t word, uint32_t dqm) {
 
   debug_mmio_write(sp, sp_register_mnemonics[reg], word, dqm);
   rsp_write_cp0_reg(rsp, reg, word);
+
+  if (reg + SP_REGISTER_OFFSET == RSP_CP0_REGISTER_SP_STATUS
+      && (word & SP_STATUS_HALT))
+  {
+    dump_disasm((const uint32_t*)(rsp->mem + 0x1000), 0x1000, 0x1000);
+  }
+
+
   return 0;
 }
 
