@@ -165,6 +165,7 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_LSV:
 	  case RSP_OPCODE_LTV:
 	  case RSP_OPCODE_LUV:
+	  case RSP_OPCODE_LFV:
 	  case RSP_OPCODE_SBV:
 	  case RSP_OPCODE_SDV:
 	  case RSP_OPCODE_SLV:
@@ -174,11 +175,28 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_SSV:
 	  case RSP_OPCODE_STV:
 	  case RSP_OPCODE_SUV:
-	  case RSP_OPCODE_SWV:
+	  case RSP_OPCODE_SFV:
+	  case RSP_OPCODE_LHV:
+	  case RSP_OPCODE_SHV:
 	  {
 	    int32_t ofs = word & 0x7F;
 	    if (ofs >= 128)
 	      ofs = 127 - ofs;
+	    static const uint32_t shift[] = { 0, 1, 2, 3, 4, 4, 3, 3, 4, 4, 0, 4 };
+	    ofs <<= shift[word >> 11 & 0xF];
+	    if (ofs < 0)
+	      line_len += fprintf(f, " v%d[e%d], %d(r%d)", rt, el / 2, ofs, e);
+	    else
+	      line_len += fprintf(f, " v%d[e%d], $%x(r%d)", rt, el / 2, ofs, e);
+	    break;
+	  }
+
+	  case RSP_OPCODE_SWV: // 
+	  {
+	    int32_t ofs = word & 0x7F;
+	    if (ofs >= 128)
+	      ofs = 127 - ofs;
+	    ofs <<= 4;
 	    if (ofs < 0)
 	      line_len += fprintf(f, " v%d[e%d], %d(r%d)", rt, el / 2, ofs, e);
 	    else
