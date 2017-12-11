@@ -122,10 +122,23 @@ static void dump_disasm(const uint32_t* buffer, uint32_t length, uint32_t start)
 	{
 	  case RSP_OPCODE_MFC0:
 	  case RSP_OPCODE_MTC0:
+	  {
+	    static const char* cp0_ctrl_reg[] =
+	    {
+	      "DMA_CACHE", "DMA_DRAM", "DMA_READ_LENGTH", "DMA_WRITE_LENGTH",
+	      "SP_STATUS", "DMA_FULL", "DMA_BUSY", "SP_RESERVED", "CMD_START",
+	      "CMD_END", "CMD_CURRENT", "CMD_STATUS", "CMD_CLOCK", "CMD_BUSY",
+	      "CMD_PIPE_BUSY", "CMD_TMEM_BUSY"
+	    };
+	    line_len += fprintf(f, " r%d, %s", rt, cp0_ctrl_reg[rd]);
+	    break;
+	  }
+
 	  case RSP_OPCODE_CFC2:
 	  case RSP_OPCODE_CTC2:
 	  {
-	    line_len += fprintf(f, " r%d, c%d", rt, rd);
+	    static const char* cp2_ctrl_reg[] = { "VCO", "VCC", "VCE" };
+	    line_len += fprintf(f, " r%d, %s", rt, cp2_ctrl_reg[rd]);
 	    break;
 	  }
 
@@ -390,6 +403,11 @@ void rsp_dma_read(struct rsp *rsp) {
     rsp->regs[RSP_CP0_REGISTER_DMA_DRAM] += length + skip;
     rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] += length;
   } while(++i <= count);
+
+  if (rsp->regs[RSP_CP0_REGISTER_DMA_CACHE] & 0x1000)
+  {
+    dump_disasm((const uint32_t*)(rsp->mem + 0x1000), 0x1000, 0x1000);
+  }
 }
 
 // DMA from the RSP's memory space.
