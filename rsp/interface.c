@@ -108,6 +108,13 @@ static void dump_disasm(const uint32_t buffer[0x400],
 
     int line_len = 0;
 
+    static const char* reg_names[] = {
+      "r0", "at", "r2", "r3", "a0", "a1", "a2", "a3",
+      "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
+      "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
+      "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra"
+    };
+
     uint32_t word = buffer[i];
     if (word != 0)
     {
@@ -137,7 +144,7 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	      "CMD_END", "CMD_CURRENT", "CMD_STATUS", "CMD_CLOCK", "CMD_BUSY",
 	      "CMD_PIPE_BUSY", "CMD_TMEM_BUSY"
 	    };
-	    line_len += fprintf(f, " r%d, %s", rt, cp0_ctrl_reg[rd]);
+	    line_len += fprintf(f, " %s, %s", reg_names[rt], cp0_ctrl_reg[rd]);
 	    break;
 	  }
 
@@ -145,14 +152,14 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_CTC2:
 	  {
 	    static const char* cp2_ctrl_reg[] = { "VCO", "VCC", "VCE" };
-	    line_len += fprintf(f, " r%d, %s", rt, cp2_ctrl_reg[rd]);
+	    line_len += fprintf(f, " %s, %s", reg_names[rt], cp2_ctrl_reg[rd]);
 	    break;
 	  }
 
 	  case RSP_OPCODE_MFC2:
 	  case RSP_OPCODE_MTC2:
 	  {
-	    line_len += fprintf(f, " r%d, v%d[e%d]", rt, rd, el / 2);
+	    line_len += fprintf(f, " %s, v%d[e%d]", reg_names[rt], rd, el / 2);
 	    break;
 	  }
 
@@ -178,29 +185,19 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_SFV:
 	  case RSP_OPCODE_LHV:
 	  case RSP_OPCODE_SHV:
+	  case RSP_OPCODE_SWV:
 	  {
 	    int32_t ofs = word & 0x7F;
 	    if (ofs >= 128)
 	      ofs = 127 - ofs;
-	    static const uint32_t shift[] = { 0, 1, 2, 3, 4, 4, 3, 3, 4, 4, 0, 4 };
+	    static const uint32_t shift[] = { 0, 1, 2, 3, 4, 4, 3, 3, 4, 4, 4, 4 };
 	    ofs <<= shift[word >> 11 & 0xF];
 	    if (ofs < 0)
-	      line_len += fprintf(f, " v%d[e%d], %d(r%d)", rt, el / 2, ofs, e);
+	      line_len += fprintf(f, " v%d[e%d], %d(%s)",
+		  rt, el / 2, ofs, reg_names[e]);
 	    else
-	      line_len += fprintf(f, " v%d[e%d], $%x(r%d)", rt, el / 2, ofs, e);
-	    break;
-	  }
-
-	  case RSP_OPCODE_SWV: // 
-	  {
-	    int32_t ofs = word & 0x7F;
-	    if (ofs >= 128)
-	      ofs = 127 - ofs;
-	    ofs <<= 4;
-	    if (ofs < 0)
-	      line_len += fprintf(f, " v%d[e%d], %d(r%d)", rt, el / 2, ofs, e);
-	    else
-	      line_len += fprintf(f, " v%d[e%d], $%x(r%d)", rt, el / 2, ofs, e);
+	      line_len += fprintf(f, " v%d[e%d], $%x(%s)",
+		  rt, el / 2, ofs, reg_names[e]);
 	    break;
 	  }
 
@@ -215,16 +212,18 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  {
 	    int16_t ofs = (int16_t)(word & 0xFFFF);
 	    if (ofs < 0)
-	      line_len += fprintf(f, " r%d, %d(r%d)", rt, ofs, rs);
+	      line_len += fprintf(f, " %s, %d(%s)",
+		  reg_names[rt], ofs, reg_names[rs]);
 	    else
-	      line_len += fprintf(f, " r%d, $%x(r%d)", rt, ofs, rs);
+	      line_len += fprintf(f, " %s, $%x(%s)",
+		  reg_names[rt], ofs, reg_names[rs]);
 	    break;
 	  }
 
 	  case RSP_OPCODE_LUI:
 	  {
 	    uint32_t imm = word & 0xFFFF;
-	    line_len += fprintf(f, " r%d, %d", rt, imm);
+	    line_len += fprintf(f, " %s, %d", reg_names[rt], imm);
 	    break;
 	  }
 
@@ -236,7 +235,8 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_XORI:
 	  {
 	    uint32_t imm = word & 0xFFFF;
-	    line_len += fprintf(f, " r%d, r%d, $%X", rt, rs, imm);
+	    line_len += fprintf(f, " %s, %s, $%X",
+		reg_names[rt], reg_names[rs], imm);
 	    break;
 	  }
 
@@ -249,7 +249,8 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_SUBU:
 	  case RSP_OPCODE_XOR:
 	  {
-	    line_len += fprintf(f, " r%d, r%d, r%d", rd, rs, rt);
+	    line_len += fprintf(f, " %s, %s, %s",
+		reg_names[rd], reg_names[rs], reg_names[rt]);
 	    break;
 	  }
 
@@ -257,19 +258,20 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_SRAV:
 	  case RSP_OPCODE_SRLV:
 	  {
-	    line_len += fprintf(f, " r%d, r%d, r%d", rd, rt, rs);
+	    line_len += fprintf(f, " %s, %s, %s",
+		reg_names[rd], reg_names[rt], reg_names[rs]);
 	    break;
 	  }
 
 	  case RSP_OPCODE_JALR:
 	  {
-	    line_len += fprintf(f, " r%d, r%d", rd, rs);
+	    line_len += fprintf(f, " %s, %s", reg_names[rd], reg_names[rs]);
 	    break;
 	  }
 
 	  case RSP_OPCODE_JR:
 	  {
-	    line_len += fprintf(f, " r%d", rs);
+	    line_len += fprintf(f, " %s", reg_names[rs]);
 	    break;
 	  }
 
@@ -277,14 +279,15 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_SRA:
 	  case RSP_OPCODE_SRL:
 	  {
-	    line_len += fprintf(f, " r%d, r%d, %d", rd, rt, vd);
+	    line_len += fprintf(f, " %s, %s, %s",
+		reg_names[rd], reg_names[rt], reg_names[vd]);
 	    break;
 	  }
 
 	  case RSP_OPCODE_BEQ:
 	  case RSP_OPCODE_BNE:
 	  {
-	    line_len += fprintf(f, " r%d, r%d,", rs, rt);
+	    line_len += fprintf(f, " %s, %s,", reg_names[rs], reg_names[rt]);
 	    break;
 	  }
 
@@ -295,7 +298,7 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_BLTZ:
 	  case RSP_OPCODE_BLTZAL:
 	  {
-	    line_len += fprintf(f, " r%d,", rs);
+	    line_len += fprintf(f, " %s,", reg_names[rs]);
 	    break;
 	  }
 	}
