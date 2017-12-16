@@ -92,6 +92,10 @@ static void dump_disasm(const uint32_t buffer[0x400],
   f = fopen(filename, "w");
   fprintf(f, "// start=%Xh(%d) length=%d(%Xh)\n",
     start, start, length, length);
+  fprintf(f, "arch n64.rsp\n");
+  fprintf(f, "endian msb\n");
+  fprintf(f, "origin $0\n");
+  fprintf(f, "base $0\n");
 
   // dump ops
   start = start / 4 - 0x400;
@@ -104,12 +108,12 @@ static void dump_disasm(const uint32_t buffer[0x400],
       fprintf(f, "end:\n");
 
     if (labels[i])
-      fprintf(f, "label_%x:\n", i);
+      fprintf(f, "\nlabel_%x:\n", i);
 
     int line_len = 0;
 
     static const char* reg_names[] = {
-      "r0", "at", "r2", "r3", "a0", "a1", "a2", "a3",
+      "r0", "at", "v0", "v1", "a0", "a1", "a2", "a3",
       "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
       "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
       "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra"
@@ -151,7 +155,7 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_CFC2:
 	  case RSP_OPCODE_CTC2:
 	  {
-	    static const char* cp2_ctrl_reg[] = { "VCO", "VCC", "VCE" };
+	    static const char* cp2_ctrl_reg[] = { "vco", "vcc", "vce" };
 	    line_len += fprintf(f, " %s, %s", reg_names[rt], cp2_ctrl_reg[rd]);
 	    break;
 	  }
@@ -159,7 +163,7 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_MFC2:
 	  case RSP_OPCODE_MTC2:
 	  {
-	    line_len += fprintf(f, " %s, v%d[e%d]", reg_names[rt], rd, el / 2);
+	    line_len += fprintf(f, " %s, v%d[e%d]", reg_names[rt], rd, el);
 	    break;
 	  }
 
@@ -194,10 +198,10 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	    ofs <<= shift[word >> 11 & 0xF];
 	    if (ofs < 0)
 	      line_len += fprintf(f, " v%d[e%d], %d(%s)",
-		  rt, el / 2, ofs, reg_names[e]);
+		  rt, el, ofs, reg_names[e]);
 	    else
 	      line_len += fprintf(f, " v%d[e%d], $%x(%s)",
-		  rt, el / 2, ofs, reg_names[e]);
+		  rt, el, ofs, reg_names[e]);
 	    break;
 	  }
 
@@ -347,7 +351,7 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  {
 	    line_len += fprintf(f, " v%d, v%d, v%d", vd, rd, rt);
 	    if (e > 0)
-	      line_len += fprintf(f, "[e%d]", e / 2);
+	      line_len += fprintf(f, "[e%d]", e);
 	    break;
 	  }
 
@@ -359,7 +363,7 @@ static void dump_disasm(const uint32_t buffer[0x400],
 	  case RSP_OPCODE_VRSQH:
 	  case RSP_OPCODE_VRSQL:
 	  {
-	    line_len += fprintf(f, " v%d[e%d], v%d[e%d]", vd, rd, rt, e / 2);
+	    line_len += fprintf(f, " v%d[e%d], v%d[e%d]", vd, rd, rt, e);
 	    break;
 	  }
 	}
@@ -382,6 +386,9 @@ static void dump_disasm(const uint32_t buffer[0x400],
     fprintf(f, "// %02X %02X %02X %02X",
 	(word >> 24) & 0xFF, (word >> 16) & 0xFF,
 	(word >> 8) & 0xFF, word & 0xFF);
+
+    if (decoded[i]->flags & OPCODE_INFO_BRANCH)
+      fprintf(f, "\n");
 
     fputc('\n', f);
   }
